@@ -1,0 +1,21 @@
+# Android / Gradle outputs
+.gradle/
+build/
+**/build/
+local.properties
+
+# Native build outputs
+*.apk
+*.aab
+*.so
+*.o
+*.a
+.externalNativeBuild/
+.cxx/
+
+# Signing keys and local secrets
+*.keystore
+*.jks
+*.pem
+*.p12
+.env

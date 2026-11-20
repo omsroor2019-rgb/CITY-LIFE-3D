@@ -1,0 +1,174 @@
+name: Build CITY LIFE 3D APK
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+      - master
+
+permissions:
+  contents: read
+
+jobs:
+  build-android:
+    name: Build Android APK
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout game source
+        uses: actions/checkout@v4
+        with:
+          path: game-source
+          persist-credentials: false
+
+      - name: Verify game source
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [[ -f game-source/src/main.c ]]; then
+            echo "GAME_SOURCE=game-source/src/main.c" >> "$GITHUB_ENV"
+          elif [[ -f game-source/main.c ]]; then
+            echo "GAME_SOURCE=game-source/main.c" >> "$GITHUB_ENV"
+          else
+            echo "ERROR: main.c was not found in the repository."
+            find game-source -maxdepth 4 -type f -print
+            exit 1
+          fi
+
+      - name: Checkout raymob Android template
+        uses: actions/checkout@v4
+        with:
+          repository: KarvinJ/raylib-mobile
+          ref: main
+          path: android-project
+          persist-credentials: false
+
+      - name: Verify Android template
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f android-project/gradlew
+          test -f android-project/gradle.properties
+          test -f android-project/app/build.gradle
+          test -f android-project/app/src/main/cpp/CMakeLists.txt
+          test -d android-project/app/src/main/cpp/deps/raylib
+          test -d android-project/app/src/main/cpp/deps/raymob
+
+      - name: Install Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      # setup-android@v4 accepts SDK licenses itself.
+      # Empty packages skips automatic package installation; exact packages
+      # required by raymob are installed in the following step.
+      - name: Set up Android command-line tools
+        uses: android-actions/setup-android@v4
+        with:
+          accept-android-sdk-licenses: true
+          log-accepted-android-sdk-licenses: false
+          packages: ""
+
+      - name: Install Android SDK and NDK packages
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          sdkmanager --install \
+            "platform-tools" \
+            "platforms;android-34" \
+            "build-tools;34.0.0" \
+            "ndk;27.2.12479018" \
+            "cmake;3.22.1"
+
+      - name: Install CITY LIFE 3D source and configure app
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          CPP_DIR="android-project/app/src/main/cpp"
+          mkdir -p "$CPP_DIR"
+          cp "$GAME_SOURCE" "$CPP_DIR/main.c"
+
+          python3 - <<'PY'
+          from pathlib import Path
+
+          properties_file = Path("android-project/gradle.properties")
+          values = {
+              "projectName": "city-life-3d",
+              "app.name": "CITY LIFE 3D",
+              "app.native_library_name": "citylife3d",
+              "app.application_id": "com.citylife3d.game",
+              "app.category": "GAME",
+              "app.orientation": "landscape",
+              "app.version_name": "0.1.0",
+              "app.version_code": "1",
+              "gl.version": "ES20",
+              "display.keep_on": "true",
+              "display.immersive": "true",
+              "display.into_cutout": "true",
+              "requirements.internet": "false",
+              "requirements.vibration": "false",
+              "requirements.gyroscope": "false",
+              "requirements.accelerometer": "false",
+          }
+
+          original_lines = properties_file.read_text(encoding="utf-8").splitlines()
+          updated_lines = []
+          seen = set()
+
+          for line in original_lines:
+              stripped = line.strip()
+              if stripped and not stripped.startswith("#") and "=" in stripped:
+                  key = stripped.split("=", 1)[0].strip()
+                  if key in values:
+                      updated_lines.append(f"{key}={values[key]}")
+                      seen.add(key)
+                      continue
+              updated_lines.append(line)
+
+          for key, value in values.items():
+              if key not in seen:
+                  updated_lines.append(f"{key}={value}")
+
+          properties_file.write_text(
+              "\n".join(updated_lines) + "\n",
+              encoding="utf-8"
+          )
+          PY
+
+          chmod +x android-project/gradlew
+          test -s "$CPP_DIR/main.c"
+          echo "Configured CITY LIFE 3D native source."
+
+      - name: Build debug APK
+        working-directory: android-project
+        shell: bash
+        run: |
+          ./gradlew --no-daemon --stacktrace :app:assembleDebug
+
+      - name: Verify APK output
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK_DIR="android-project/app/build/outputs/apk/debug"
+
+          if ! compgen -G "$APK_DIR/*.apk" > /dev/null; then
+            echo "ERROR: Gradle finished but no APK was generated."
+            find android-project/app/build/outputs -type f -print || true
+            exit 1
+          fi
+
+          ls -lh "$APK_DIR"/*.apk
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: CITY-LIFE-3D-APK
+          path: android-project/app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
+          retention-days: 14

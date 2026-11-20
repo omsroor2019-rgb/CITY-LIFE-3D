@@ -1,0 +1,18 @@
+طريقة رفع المشروع من الهاتف
+
+الأرشيف يحتوي مشروعاً كاملاً بالمسارات الصحيحة. لا ترفع ملف ZIP نفسه إلى GitHub على أنه مصدر الكود.
+
+الملفات الأساسية:
+- src/main.c
+- .github/workflows/android-apk.yml
+- README-AR.md
+- .gitignore
+- LICENSE-CODE.txt
+
+في GitHub، يجب أن يكون مسار workflow داخل:
+.github/workflows/android-apk.yml
+
+ويجب أن يكون كود اللعبة داخل:
+src/main.c
+
+إذا كان المستودع يحتوي ملفات سابقة، استبدل الملفين الأساسيين بهاتين النسختين بدلاً من إنشاء نسخ مكررة. بعد Commit changes يشتغل workflow تلقائياً عند الدفع إلى main أو master.
